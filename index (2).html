@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TRACKER — Command Center</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow:wght@300;400;600;700;900&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:       #080a0e;
+    --surface:  #0d1117;
+    --border:   #1c2333;
+    --accent:   #00e5ff;
+    --danger:   #ff3b3b;
+    --success:  #00e676;
+    --warning:  #ffb300;
+    --text:     #c9d1d9;
+    --dim:      #4a5568;
+    --mono:     'Share Tech Mono', monospace;
+    --sans:     'Barlow', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,229,255,0.015) 2px,
+      rgba(0,229,255,0.015) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 28px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    font-family: var(--mono);
+    font-size: 18px;
+    color: var(--accent);
+    letter-spacing: 4px;
+    text-transform: uppercase;
+  }
+
+  .logo span { color: var(--dim); }
+
+  #status-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--dim);
+    transition: background 0.3s;
+  }
+  .dot.online  { background: var(--success); box-shadow: 0 0 8px var(--success); animation: pulse 2s infinite; }
+  .dot.offline { background: var(--danger);  box-shadow: 0 0 8px var(--danger); }
+
+  @keyframes pulse {
+    0%,100% { opacity: 1; }
+    50%      { opacity: 0.4; }
+  }
+
+  .main {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    grid-template-rows: auto 1fr;
+    gap: 0;
+    height: calc(100vh - 57px);
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    grid-row: 1 / 3;
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .section {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--dim);
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+
+  /* Stats grid */
+  .stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .stat {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 12px 14px;
+    transition: border-color 0.3s;
+  }
+
+  .stat:hover { border-color: var(--accent); }
+
+  .stat-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--dim);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .stat-value {
+    font-family: var(--mono);
+    font-size: 20px;
+    color: var(--accent);
+    line-height: 1;
+  }
+
+  .stat-unit {
+    font-size: 11px;
+    color: var(--dim);
+    margin-left: 3px;
+  }
+
+  .stat.full { grid-column: 1 / 3; }
+
+  /* Coordinates */
+  .coord {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--text);
+    padding: 4px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .coord-label { color: var(--dim); font-size: 11px; }
+
+  /* GPS fix indicator */
+  .fix-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 2px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 1px;
+    margin-top: 10px;
+  }
+  .fix-badge.fixed    { background: rgba(0,230,118,0.1); color: var(--success); border: 1px solid rgba(0,230,118,0.3); }
+  .fix-badge.no-fix   { background: rgba(255,179,0,0.1); color: var(--warning); border: 1px solid rgba(255,179,0,0.3); }
+
+  .badge-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 10px;
+  }
+  .badge-row .fix-badge { margin-top: 0; }
+
+  .open-gmaps {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 2px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-decoration: none;
+    background: rgba(0,229,255,0.08);
+    color: var(--accent);
+    border: 1px solid rgba(0,229,255,0.3);
+    transition: all 0.2s;
+  }
+  .open-gmaps:hover:not(.disabled) {
+    background: var(--accent);
+    color: #000;
+    box-shadow: 0 0 10px rgba(0,229,255,0.3);
+  }
+  .open-gmaps.disabled {
+    opacity: 0.35;
+    pointer-events: none;
+    cursor: not-allowed;
+  }
+
+  /* ── Ignition Control ── */
+  .ignition-state {
+    text-align: center;
+    padding: 16px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    transition: all 0.4s;
+  }
+  .ignition-state.on  { background: rgba(0,230,118,0.08); border: 1px solid rgba(0,230,118,0.3); color: var(--success); }
+  .ignition-state.cut { background: rgba(255,59,59,0.08);  border: 1px solid rgba(255,59,59,0.3);  color: var(--danger); }
+
+  .btn {
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 10px;
+  }
+
+  .btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  .btn-cut {
+    background: rgba(255,59,59,0.15);
+    color: var(--danger);
+    border: 1px solid var(--danger);
+  }
+  .btn-cut:hover:not(:disabled) {
+    background: var(--danger);
+    color: #fff;
+    box-shadow: 0 0 20px rgba(255,59,59,0.4);
+  }
+
+  .btn-restore {
+    background: rgba(0,230,118,0.1);
+    color: var(--success);
+    border: 1px solid var(--success);
+  }
+  .btn-restore:hover:not(:disabled) {
+    background: var(--success);
+    color: #000;
+    box-shadow: 0 0 20px rgba(0,230,118,0.4);
+  }
+
+  .cmd-feedback {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-align: center;
+    min-height: 18px;
+    color: var(--dim);
+    letter-spacing: 1px;
+    transition: color 0.3s;
+  }
+
+  /* Last seen */
+  .last-seen {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--dim);
+    text-align: center;
+    margin-top: 6px;
+  }
+
+  /* ── Map ── */
+  #map {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    width: 100%;
+    height: 100%;
+    background: #0a0f1a;
+  }
+
+  /* Config bar */
+  .config-bar {
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--dim);
+  }
+
+  .config-bar input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    border-radius: 3px;
+    flex: 1;
+  }
+  .config-bar input:focus { outline: none; border-color: var(--accent); }
+
+  .btn-save {
+    padding: 6px 14px;
+    background: rgba(0,229,255,0.1);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 1px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .btn-save:hover { background: var(--accent); color: #000; }
+
+  /* Log */
+  .log {
+    padding: 0 24px 20px;
+    flex: 1;
+  }
+
+  .log-entry {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--dim);
+    padding: 3px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    display: flex;
+    gap: 10px;
+  }
+  .log-entry .time { color: var(--accent); opacity: 0.5; white-space: nowrap; }
+  .log-entry.warn  .msg { color: var(--warning); }
+  .log-entry.error .msg { color: var(--danger); }
+  .log-entry.ok    .msg { color: var(--success); }
+
+  @media (max-width: 768px) {
+    .main { grid-template-columns: 1fr; grid-template-rows: auto 400px; }
+    .sidebar { grid-row: 1; border-right: none; border-bottom: 1px solid var(--border); }
+    #map { grid-column: 1; grid-row: 2; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">TRACKER<span>//</span>CMD</div>
+  <div id="status-badge">
+    <div class="dot" id="status-dot"></div>
+    <span id="status-text">CONNECTING</span>
+  </div>
+</header>
+
+<div class="main">
+
+  <!-- ── Sidebar ── -->
+  <div class="sidebar">
+
+    <!-- Server config -->
+    <div class="section">
+      <div class="section-label">Server</div>
+      <div class="config-bar" style="padding:0; gap:8px;">
+        <input id="server-url" type="text" placeholder="https://your-app.onrender.com" />
+        <button class="btn-save" onclick="saveServer()">SET</button>
+      </div>
+      <div style="margin-top:8px;" class="config-bar" style="padding:0; gap:8px;">
+        <span style="white-space:nowrap;">Device ID:</span>
+        <input id="device-id" type="text" value="tracker_01" style="margin-left:8px;" />
+      </div>
+    </div>
+
+    <!-- Live stats -->
+    <div class="section">
+      <div class="section-label">Telemetry</div>
+      <div class="stats">
+        <div class="stat">
+          <div class="stat-label">Speed</div>
+          <div class="stat-value" id="speed">—<span class="stat-unit">km/h</span></div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Altitude</div>
+          <div class="stat-value" id="altitude">—<span class="stat-unit">m</span></div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Satellites</div>
+          <div class="stat-value" id="satellites">—</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Signal</div>
+          <div class="stat-value" id="signal-bars">—</div>
+        </div>
+        <div class="stat full">
+          <div class="stat-label">Coordinates</div>
+          <div class="coord">
+            <span class="coord-label">LAT</span>
+            <span id="lat">—</span>
+          </div>
+          <div class="coord">
+            <span class="coord-label">LNG</span>
+            <span id="lng">—</span>
+          </div>
+          <div class="badge-row">
+            <div id="fix-badge" class="fix-badge no-fix">◌ NO FIX</div>
+            <a id="open-gmaps" class="open-gmaps disabled" href="#" target="_blank" rel="noopener">+ OPEN IN GOOGLE MAPS</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ignition control -->
+    <div class="section">
+      <div class="section-label">Ignition Control</div>
+      <div class="ignition-state on" id="ignition-state">● IGNITION ON</div>
+      <button class="btn btn-cut" id="btn-cut" onclick="sendCommand('cut')">
+        ⚡ CUT IGNITION
+      </button>
+      <button class="btn btn-restore" id="btn-restore" onclick="sendCommand('restore')" disabled>
+        ↺ RESTORE IGNITION
+      </button>
+      <div class="cmd-feedback" id="cmd-feedback"></div>
+      <div class="last-seen" id="last-seen">Last seen: —</div>
+    </div>
+
+    <!-- Activity log -->
+    <div class="section" style="border-bottom:none;">
+      <div class="section-label">Activity Log</div>
+    </div>
+    <div class="log" id="log"></div>
+
+  </div>
+
+  <!-- ── Map ── -->
+  <div id="map"></div>
+
+</div>
+
+<!-- Leaflet (no API key needed) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+
+<script>
+// ─────────────────────────────────────────
+// Config
+// ─────────────────────────────────────────
+let SERVER = localStorage.getItem('tracker_server') || 'https://gps.anthonycodes.tech';
+let DEVICE = localStorage.getItem('tracker_device') || 'tracker_01';
+
+document.getElementById('server-url').value = SERVER;
+document.getElementById('device-id').value  = DEVICE;
+
+function saveServer() {
+  SERVER = document.getElementById('server-url').value.trim().replace(/\/$/, '');
+  DEVICE = document.getElementById('device-id').value.trim();
+  localStorage.setItem('tracker_server', SERVER);
+  localStorage.setItem('tracker_device', DEVICE);
+  addLog('Server updated: ' + SERVER, 'ok');
+}
+
+// ─────────────────────────────────────────
+// Map setup (dark tile)
+// ─────────────────────────────────────────
+const map = L.map('map', {
+  zoomControl: true,
+  attributionControl: false,
+  maxZoom: 22
+}).setView([3.848, 11.502], 13);
+
+const darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  maxNativeZoom: 20,
+  maxZoom: 22
+});
+const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxNativeZoom: 19,
+  maxZoom: 22
+});
+const satelliteLayer = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  { maxNativeZoom: 22, maxZoom: 22 }
+);
+const labelsOverlay = L.tileLayer(
+  'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png',
+  { maxNativeZoom: 20, maxZoom: 22 }
+);
+
+darkLayer.addTo(map);
+
+L.control.layers(
+  { 'Dark': darkLayer, 'Street': streetLayer, 'Satellite': satelliteLayer },
+  { 'Labels (satellite overlay)': labelsOverlay },
+  { position: 'topright', collapsed: false }
+).addTo(map);
+
+const markerIcon = L.divIcon({
+  html: `<div style="
+    width:14px; height:14px;
+    background:#00e5ff;
+    border-radius:50%;
+    border:2px solid #fff;
+    box-shadow:0 0 12px #00e5ff, 0 0 24px rgba(0,229,255,0.4);
+  "></div>`,
+  iconSize: [14, 14],
+  iconAnchor: [7, 7],
+  className: ''
+});
+
+let marker = null;
+let trail  = L.polyline([], { color: '#00e5ff', weight: 2, opacity: 0.5 }).addTo(map);
+let trailPoints = [];
+let firstFix = true;
+
+// ─────────────────────────────────────────
+// State
+// ─────────────────────────────────────────
+let ignitionCut = false;
+
+// ─────────────────────────────────────────
+// Poll server
+// ─────────────────────────────────────────
+async function fetchStatus() {
+  if (!SERVER) return;
+  try {
+    const res  = await fetch(`${SERVER}/api/status?device_id=${DEVICE}`);
+    const data = await res.json();
+    updateUI(data);
+  } catch (e) {
+    setOffline();
+  }
+}
+
+function updateUI(d) {
+  const dot  = document.getElementById('status-dot');
+  const txt  = document.getElementById('status-text');
+
+  if (d.online) {
+    dot.className = 'dot online';
+    txt.textContent = 'ONLINE';
+  } else {
+    dot.className = 'dot offline';
+    txt.textContent = 'OFFLINE';
+  }
+
+  // Telemetry
+  document.getElementById('speed').innerHTML     = `${(d.speed||0).toFixed(0)}<span class="stat-unit">km/h</span>`;
+  document.getElementById('altitude').innerHTML  = `${(d.altitude||0).toFixed(0)}<span class="stat-unit">m</span>`;
+  document.getElementById('satellites').textContent = d.satellites || 0;
+  document.getElementById('signal-bars').textContent = signalBars(d.satellites);
+
+  if (d.lat && d.lng) {
+    document.getElementById('lat').textContent = d.lat.toFixed(6);
+    document.getElementById('lng').textContent = d.lng.toFixed(6);
+  }
+
+  // GPS fix
+  const fixEl = document.getElementById('fix-badge');
+  const gmapsEl = document.getElementById('open-gmaps');
+  if (d.gps_fixed) {
+    fixEl.className = 'fix-badge fixed';
+    fixEl.textContent = '◉ GPS FIXED';
+  } else {
+    fixEl.className = 'fix-badge no-fix';
+    fixEl.textContent = '◌ NO FIX';
+  }
+
+  // Google Maps link
+  if (d.gps_fixed && d.lat && d.lng) {
+    gmapsEl.href = `https://www.google.com/maps?q=${d.lat},${d.lng}`;
+    gmapsEl.classList.remove('disabled');
+  } else {
+    gmapsEl.href = '#';
+    gmapsEl.classList.add('disabled');
+  }
+
+  // Last seen
+  if (d.last_seen) {
+    const dt = new Date(d.last_seen);
+    document.getElementById('last-seen').textContent = 'Last seen: ' + dt.toLocaleTimeString();
+  }
+
+  // Relay state from device
+  if (d.relay_state === 'cut' && !ignitionCut) {
+    ignitionCut = true;
+    updateIgnitionUI();
+  } else if (d.relay_state === 'on' && ignitionCut) {
+    ignitionCut = false;
+    updateIgnitionUI();
+  }
+
+  // Map
+  if (d.gps_fixed && d.lat && d.lng) {
+    const latlng = [d.lat, d.lng];
+    if (!marker) {
+      marker = L.marker(latlng, { icon: markerIcon }).addTo(map);
+    } else {
+      marker.setLatLng(latlng);
+    }
+    trailPoints.push(latlng);
+    if (trailPoints.length > 200) trailPoints.shift();
+    trail.setLatLngs(trailPoints);
+    if (firstFix) {
+      map.setView(latlng, 15);
+      firstFix = false;
+    }
+  }
+}
+
+function setOffline() {
+  document.getElementById('status-dot').className = 'dot offline';
+  document.getElementById('status-text').textContent = 'OFFLINE';
+}
+
+function signalBars(sats) {
+  if (!sats || sats === 0) return '▁▁▁▁';
+  if (sats < 4)  return '▁▃▁▁';
+  if (sats < 7)  return '▁▃▅▁';
+  if (sats < 10) return '▁▃▅▇';
+  return '▂▄▆█';
+}
+
+// ─────────────────────────────────────────
+// Commands
+// ─────────────────────────────────────────
+async function sendCommand(cmd) {
+  if (!SERVER) {
+    addLog('Set server URL first', 'warn');
+    return;
+  }
+
+  const feedback = document.getElementById('cmd-feedback');
+  feedback.style.color = 'var(--warning)';
+  feedback.textContent = 'SENDING...';
+
+  try {
+    const res = await fetch(`${SERVER}/api/control`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device_id: DEVICE, command: cmd })
+    });
+    const data = await res.json();
+
+    if (data.status === 'queued') {
+      ignitionCut = cmd === 'cut';
+      updateIgnitionUI();
+      feedback.style.color = 'var(--success)';
+      feedback.textContent = cmd === 'cut' ? 'COMMAND SENT — CUTTING' : 'COMMAND SENT — RESTORING';
+      addLog(`Command queued: ${cmd.toUpperCase()}`, cmd === 'cut' ? 'warn' : 'ok');
+      setTimeout(() => { feedback.textContent = ''; }, 3000);
+    }
+  } catch (e) {
+    feedback.style.color = 'var(--danger)';
+    feedback.textContent = 'SEND FAILED';
+    addLog('Command send failed: ' + e.message, 'error');
+  }
+}
+
+function updateIgnitionUI() {
+  const stateEl   = document.getElementById('ignition-state');
+  const btnCut    = document.getElementById('btn-cut');
+  const btnRestore= document.getElementById('btn-restore');
+
+  if (ignitionCut) {
+    stateEl.className = 'ignition-state cut';
+    stateEl.textContent = '✕ IGNITION CUT';
+    btnCut.disabled     = true;
+    btnRestore.disabled = false;
+  } else {
+    stateEl.className = 'ignition-state on';
+    stateEl.textContent = '● IGNITION ON';
+    btnCut.disabled     = false;
+    btnRestore.disabled = true;
+  }
+}
+
+// ─────────────────────────────────────────
+// Activity log
+// ─────────────────────────────────────────
+function addLog(msg, type = '') {
+  const log = document.getElementById('log');
+  const now = new Date().toLocaleTimeString();
+  const entry = document.createElement('div');
+  entry.className = `log-entry ${type}`;
+  entry.innerHTML = `<span class="time">${now}</span><span class="msg">${msg}</span>`;
+  log.insertBefore(entry, log.firstChild);
+  if (log.children.length > 50) log.removeChild(log.lastChild);
+}
+
+// ─────────────────────────────────────────
+// Start polling
+// ─────────────────────────────────────────
+setInterval(fetchStatus, 3000);
+fetchStatus();
+addLog('Dashboard initialized', 'ok');
+</script>
+</body>
+</html>
