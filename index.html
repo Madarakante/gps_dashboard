@@ -543,6 +543,7 @@ let firstFix = true;
 // State
 // ─────────────────────────────────────────
 let ignitionCut = false;
+let pendingCommand = false;   // true while waiting for ESP to confirm command
 
 // ─────────────────────────────────────────
 // Poll server
@@ -607,13 +608,23 @@ function updateUI(d) {
     document.getElementById('last-seen').textContent = 'Last seen: ' + dt.toLocaleTimeString();
   }
 
-  // Relay state from device
-  if (d.relay_state === 'cut' && !ignitionCut) {
-    ignitionCut = true;
-    updateIgnitionUI();
-  } else if (d.relay_state === 'on' && ignitionCut) {
-    ignitionCut = false;
-    updateIgnitionUI();
+  // Relay state from device — only override local state when no command is in-flight.
+  // Once the ESP confirms the new relay_state, clear the pending flag.
+  if (!pendingCommand) {
+    if (d.relay_state === 'cut' && !ignitionCut) {
+      ignitionCut = true;
+      updateIgnitionUI();
+    } else if (d.relay_state === 'on' && ignitionCut) {
+      ignitionCut = false;
+      updateIgnitionUI();
+    }
+  } else {
+    // Command is pending — check if ESP has confirmed it
+    const expectedState = ignitionCut ? 'cut' : 'on';
+    if (d.relay_state === expectedState) {
+      pendingCommand = false;   // ESP confirmed, stop blocking server updates
+      addLog(`Device confirmed: ${expectedState.toUpperCase()}`, expectedState === 'cut' ? 'warn' : 'ok');
+    }
   }
 
   // Map
@@ -660,6 +671,11 @@ async function sendCommand(cmd) {
   feedback.style.color = 'var(--warning)';
   feedback.textContent = 'SENDING...';
 
+  // Optimistic update — flip UI immediately, don't wait for API response
+  ignitionCut = cmd === 'cut';
+  pendingCommand = true;
+  updateIgnitionUI();
+
   try {
     const res = await fetch(`${SERVER}/api/control`, {
       method: 'POST',
@@ -668,15 +684,16 @@ async function sendCommand(cmd) {
     });
     const data = await res.json();
 
-    if (data.status === 'queued') {
-      ignitionCut = cmd === 'cut';
-      updateIgnitionUI();
-      feedback.style.color = 'var(--success)';
-      feedback.textContent = cmd === 'cut' ? 'COMMAND SENT — CUTTING' : 'COMMAND SENT — RESTORING';
-      addLog(`Command queued: ${cmd.toUpperCase()}`, cmd === 'cut' ? 'warn' : 'ok');
-      setTimeout(() => { feedback.textContent = ''; }, 3000);
-    }
+    feedback.style.color = 'var(--success)';
+    feedback.textContent = cmd === 'cut' ? 'COMMAND SENT — CUTTING' : 'COMMAND SENT — RESTORING';
+    addLog(`Command queued: ${cmd.toUpperCase()}`, cmd === 'cut' ? 'warn' : 'ok');
+    setTimeout(() => { feedback.textContent = ''; }, 3000);
+
   } catch (e) {
+    // POST failed — roll back the optimistic update
+    ignitionCut = !ignitionCut;
+    pendingCommand = false;
+    updateIgnitionUI();
     feedback.style.color = 'var(--danger)';
     feedback.textContent = 'SEND FAILED';
     addLog('Command send failed: ' + e.message, 'error');
